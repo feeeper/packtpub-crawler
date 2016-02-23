@@ -3,6 +3,7 @@ import re
 from os.path import split
 from utils import make_soup, wait, download_file
 from logs import *
+import sys
 
 class Packpub(object):
     """
@@ -18,13 +19,16 @@ class Packpub(object):
         self.info = {
             'paths': []
         }
+        # utf8 issue
+        # reload(sys)
+        # sys.setdefaultencoding('utf8')
 
     def __init_headers(self):
         return {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2228.0 Safari/537.36'
         }
 
     def __log_response(self, response, method='GET', detail=False):
@@ -55,7 +59,6 @@ class Packpub(object):
         data['email'] = self.__config.get('credential', 'credential.email')
         data['password'] = self.__config.get('credential', 'credential.password')
         data['op'] = 'Login'
-        # print '[-] data: {0}'.format(urllib.urlencode(data))
 
         url = self.__url_base
         response = None
@@ -72,7 +75,7 @@ class Packpub(object):
         div_target = soup.find('div', {'id': 'deal-of-the-day'})
 
         title = div_target.select('div.dotd-title > h2')[0].text.strip()
-        self.info['title'] = title
+        self.info['title'] = title.replace(':', ' ')
         self.info['filename'] = title.encode('ascii', 'ignore').replace(' ', '_')
         self.info['description'] = div_target.select('div.dotd-main-book-summary > div')[2].text.strip()
         self.info['url_image'] = 'https:' + div_target.select('div.dotd-main-book-image img')[0]['src']
@@ -102,41 +105,123 @@ class Packpub(object):
         if source_code is not None:
             self.info['url_source_code'] = self.__url_base + source_code['href']
 
+    def __GET_all(self):
+        if self.__dev:
+            url = self.__url_base + self.__config.get('url', 'url.account')
+        else:
+            url = self.info['url_claim']
+
+        response = self.__session.get(url, headers=self.__headers)
+        self.__log_response(response)
+
+        soup = make_soup(response)
+        div_target = soup.find('div', {'id': 'product-account-list'})
+
+        div_claimed_books = div_target.select('.product-line')
+
+        self.books = []
+        for book in div_claimed_books:
+            if 'nid' in book.attrs:
+                # title = book['title'].replace(':', '').replace('.', '').replace("'", '').replace('\u2019', '')
+                original_title = book['title'].replace(':', '').replace('.', '')
+                title = ''.join([i if ord(i) < 128 else ' ' for i in original_title]).strip()
+                nid = book['nid']
+                cover = ('https:' + book.select('img')[0].attrs['src']) if ('src' in book.select('img')[0].attrs) else ''
+
+                source_code = book.find(href=re.compile('/code_download/*'))
+                if source_code is not None:
+                    source_code = self.__url_base + source_code['href']
+
+                self.books.append({
+                    'title': title,
+                    'nid': nid,
+                    'cover': cover,
+                    'sources': source_code})
+        return
+
     def run(self):
         """
         """
-
         self.__GET_login()
         wait(self.__delay)
         self.__POST_login()
         wait(self.__delay)
-        self.__GET_claim()
+        # self.__GET_claim()
+        self.__GET_all()
         wait(self.__delay)
 
-    def download_ebooks(self, types):
+    def download_ebooks(self, types, nid=0, title=''):
         """
         """
+        if nid == 0:
+            nid = self.info['book_id']
+
+        if title == '':
+            title = self.info['filename']
+
+        title = title.replace('[eBook]', '').strip()
 
         downloads_info = [dict(type=type,
-            url=self.__url_base + self.__config.get('url', 'url.download').format(self.info['book_id'], type),
-            filename=self.info['filename'] + '.' + type)
+            url=self.__url_base + self.__config.get('url', 'url.download').format(nid, type),
+            filename=title + '.' + type)
             for type in types]
 
         directory = self.__config.get('path', 'path.ebooks')
         for download in downloads_info:
+            fn = download['filename']
+            directory = directory.format(fn.split('.')[0]).replace(' [eBook]', '')
             self.info['paths'].append(
-                download_file(self.__session, download['url'], directory, download['filename']))
+                download_file(self.__session, download['url'], directory, fn))
 
-    def download_extras(self):
+    def download_all_ebooks(self, types, download_extras):
+        total_books = len(self.books)
+        downloaded_books_count = 0
+        for book in self.books:
+            self.download_ebooks(types, book['nid'], book['title'])
+
+            if download_extras:
+                self.download_extras(book['cover'], book['title'], book['sources'] if 'sources' in book else '')
+
+            downloaded_books_count += 1
+            print('[-] download books {0}/{1}'.format(downloaded_books_count, total_books))
+        return
+
+    def download_extras(self, img='', filename='', url_source_code=''):
         """
         """
+
+        if img == '':
+            img = self.info['url_image']
+
+        if filename == '':
+            filename = self.info['filename']
+
+        filename = ''.join([i if ord(i) < 128 else '' for i in filename]).strip()
+
+        if url_source_code == '':
+            if 'url_source_code' in self.info:
+                url_source_code = self.info['url_source_code']
 
         directory = self.__config.get('path', 'path.extras')
+        filename_replace = filename.replace(' [eBook]', '').strip()
+        directory = directory.format(filename_replace)
 
-        url_image = self.info['url_image']
-        filename = self.info['filename'] + '_' + split(url_image)[1]
-        self.info['paths'].append(download_file(self.__session, url_image, directory, filename))
+        url_image = img
 
-        if 'url_source_code' in self.info:
-            self.info['paths'].append(download_file(self.__session, self.info['url_source_code'], directory,
-                self.info['filename'] + '.zip'))
+        if url_image != '' and url_image is not None:
+            self.info['paths'].append(download_file(self.__session, url_image, directory, filename_replace + '.' + url_image.split('.')[-1]))
+
+        if url_source_code != '' and url_source_code is not None:
+            self.info['paths'].append(download_file(self.__session,
+                                                    url_source_code,
+                                                    directory,
+                                                    filename.split('.')[0].replace(' [eBook]', '') + '.zip'))
+
+    def download_all_extras(self):
+        #for book in self.books:
+        book = self.books[1]
+        print('cover: ' + book['cover'])
+        print('title: ' + book['title'])
+        print('sources: ' + book['sources'] if 'sources' in book else 'no sources')
+        self.download_extras(book['cover'], book['title'], book['sources'] if 'sources' in book else '')
+        return

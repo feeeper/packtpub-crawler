@@ -30,7 +30,7 @@ python spider.py -h
 import argparse
 from utils import ip_address, config_file
 from packtpub import Packpub
-from upload import Upload, SERVICE_DRIVE, SERVICE_DROPBOX
+# from upload import Upload, SERVICE_DRIVE, SERVICE_DROPBOX
 from logs import *
 
 def parse_types(args):
@@ -48,7 +48,7 @@ def main():
     parser.add_argument('-c', '--config', required=True, help='configuration file')
     parser.add_argument('-d', '--dev', action='store_true', help='only for development')
     parser.add_argument('-e', '--extras', action='store_true', help='download source code (if exists) and book cover')
-    parser.add_argument('-u', '--upload', choices=[SERVICE_DRIVE, SERVICE_DROPBOX], help='upload to cloud')
+#    parser.add_argument('-u', '--upload', choices=[SERVICE_DRIVE, SERVICE_DROPBOX], help='upload to cloud')
     parser.add_argument('-a', '--archive', action='store_true', help='compress all file')
     parser.add_argument('-n', '--notify', action='store_true', help='send confirmation email')
 
@@ -69,6 +69,10 @@ def main():
         packpub.run()
         log_json(packpub.info)
 
+        if True:
+            packpub.download_all_ebooks(types, args.extras)
+            return
+
         packpub.download_ebooks(types)
         if args.extras:
             packpub.download_extras()
@@ -76,8 +80,8 @@ def main():
         if args.archive:
             raise NotImplementedError('not implemented yet!')
 
-        if args.upload is not None:
-            Upload(config, args.upload).run(packpub.info['paths'])
+        #if args.upload is not None:
+        #    Upload(config, args.upload).run(packpub.info['paths'])
 
         if args.notify:
             raise NotImplementedError('not implemented yet!')

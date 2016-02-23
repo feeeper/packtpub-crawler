@@ -12,9 +12,10 @@ def ip_address():
     Gets current IP address
     """
 
-    response = requests.get('http://www.ip-addr.es')
-    print '[-] GET {0} | {1}'.format(response.status_code, response.url)
-    log_info('[+] ip address is: {0}'.format(response.text.strip()))
+    # response = requests.get('http://www.ip-addr.es')
+    # print '[-] GET {0} | {1}'.format(response.status_code, response.url)
+    # log_info('[+] ip address is: {0}'.format(response.text.strip()))
+    return
 
 def config_file(path):
     """
@@ -55,7 +56,7 @@ def download_file(r, url, directory, filename):
 
     path = os.path.join(directory, filename)
 
-    print '[-] downloading file from url: {0}'.format(url)
+    print '[-] downloading file from url: {0}'.format(''.join([i if ord(i) < 128 else '' for i in url]))
     response = r.get(url, stream=True)
     with open(path, 'wb') as f:
         total_length = int(response.headers.get('content-length'))
